@@ -14,19 +14,11 @@ from cStringIO import StringIO
 WHITESPACE = re.compile(r'\s')
 
 
-warning_count = 0
-warning_max = 20
-
-
 ##########################################################################
 
 
 def warning(s):
-    global warning_count
-    warning_count += 1
-    if warning_count > warning_max:
-        return
-    print(sys.stderr, "WARNING: %s" % s)
+    pass
 
 
 def cell_text_clean(text):
