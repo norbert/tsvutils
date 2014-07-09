@@ -1,112 +1,42 @@
 #!/usr/bin/env python
 """
-Convert a stream of JSON objects to TSV, extracting the keys 
-you specify into columns.
-
-If you don't specify any keys, it tries to figure out the set of all keys.
+Extracts keys from JSON records and outputs honest-to-goodness TSV.
 """
-for m in ['yajl','simplejson','json']:
-  try:
-    exec "import %s as simplejson" % m
-    break
-  except ImportError:
-    pass
-else:
-  raise Exception("Didn't find a JSON library")
 
-import sys,re,itertools
+from __future__ import print_function
+
+import sys
+import re
+import json
+import argparse
+from functools import reduce
+
 import tsvutil
+tsvutil.fix_stdio()
 
-#all_json = simplejson.load(sys.stdin)
-#assert isinstance(all_json, list) and len(all_json)>0
-#item1 = json[0]
-#keys = items1.keys()
-#keys.sort()
-#json_iter = all_json
 
-def safe_json_iter(raw_json_iter):
-  for raw in raw_json_iter:
-    try:
-      data = simplejson.loads(raw)
-      yield data
-    except Exception, e:
-      print>>sys.stderr, type(e), e
-      print>>sys.stderr, repr(raw)
+def stringify(value):
+    if not isinstance(value, basestring):
+        value = str(value)
+    elif isinstance(value, unicode):
+        value = value.encode('utf-8')
+    return tsvutil.WHITESPACE.sub(' ', value)
 
-def take(n, iterable):
-  "Return first n items of the iterable as a list"
-  return list(itertools.islice(iterable, n))
 
-def order_keys(keys, item_sample):
-  # Some heuristics that may or may not help
-  from collections import defaultdict
-  types = defaultdict(list)
-  lengths = defaultdict(list)
-  mid = int(len(item_sample)/2)
-  def median(L): return L[mid]
+parser = argparse.ArgumentParser(prog='json2tsv', description=__doc__)
+parser.add_argument('-H', '--no-header', action='store_false', dest='header')
+parser.add_argument('-f', metavar='list', action='append', dest='fields')
+args = parser.parse_args()
 
-  for item in item_sample:
-    for key in keys:
-      value = item[key]
-      types[key].append(type(value))
-      if isinstance(value, unicode):
-        lengths[key].append(len(value))
-  lengths = dict((k, 0 if not L else median(L)) for (k,L) in lengths.items())
-  types = dict((k,tsvutil.mode(L)) for k,L in types.items())
-  prios = [
-    lambda k: k=='id',
-    lambda k: k.endswith('_id'),
-    lambda k: k==('docid'),
-    lambda k: True]
-  def score(key):
-    prio = [i for i,f in enumerate(prios) if f(key)][0]
-    return (prio, lengths.get(key,0))
-  return sorted(keys, key=score)
 
-json_iter = safe_json_iter(sys.stdin)
-keys = sys.argv[1:]
-if not keys:
-  top = take(1000, json_iter)
-  keys = set()
-  for item in top:  keys |= set(item.keys())
-  keys = order_keys(keys, top)
-  json_iter = itertools.chain(top, json_iter)
+fields = reduce(lambda x, y: x.extend(y) or x,
+                (l.split(',') for l in args.fields), [])
 
-BAD_WS = re.compile(r"[\r\n\t]")
+if args.header:
+    print('\t'.join(fields))
 
-def clean_cell(x):
-  if x is None: return ""
-  if isinstance(x, unicode):
-    return BAD_WS.sub(" ", x.encode('utf-8'))
-  if isinstance(x, str):
-    return BAD_WS.sub(" ", x)
-  return x
-
-def stringify(x):
-  if isinstance(x, str) and not isinstance(x, unicode): return x
-  if isinstance(x, unicode): return x.encode('utf-8')
-  return str(x)
-
-def lookup(json, k):
-  # limited hacky subset of jpath
-  parts = k.split('.')
-  v = json
-  for i,part in enumerate(parts):
-    if part.endswith(']'):
-      m = re.search(r'^([^\]]+)\[([^\]])\]$', part)
-      if not m: raise Exception("wtf: %s" % repr(part))
-      k,ind = m.groups()
-      ind = eval(ind)
-      v = v[k]
-      v = v[ind]
-    else:
-      k = part
-      v = v.get(k, '' if i==len(parts)-1 else {})
-  return v
-
-print "\t".join([k.encode('utf-8') for k in keys])
-for json in json_iter:
-  print "\t".join([stringify(clean_cell(lookup(json,k))) for k in keys])
-  #print "\t".join([clean_cell(json[k]) for k in keys])
-  #print(*[clean_cell(json[k]) for k in keys], sep="\t")
-
+for line in sys.stdin:
+    record = json.loads(line)
+    values = [(stringify(record[k]) if k in record else '')
+              for k in fields]
+    print('\t'.join(values))

@@ -5,9 +5,13 @@ Miscellaneous utilities to support some of the ``tsvutils`` scripts.
 from __future__ import print_function
 
 import sys
+import re
 import codecs
 import csv
 from cStringIO import StringIO
+
+
+WHITESPACE = re.compile(r'\s')
 
 
 warning_count = 0
